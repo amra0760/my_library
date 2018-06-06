@@ -1,0 +1,101 @@
+from django.db import models
+from django.urls import reverse
+import uuid # Unique book instances
+from django.contrib.auth.models import User
+from datetime import date
+# Create your models here.
+
+
+# Model representing a book genre (e.g. Science Fiction, Non Fiction)
+class Genre(models.Model):
+    name = models.CharField(max_length=200, help_text="Enter a book genre (e.g. Science Fiction, French Poetry etc.)")
+    
+    # String for representing the Model object (in Admin site etc.)
+    def __str__(self):
+        return self.name
+   
+# Model represnting the Language the book is written in
+class Language(models.Model):
+
+    name = models.CharField(max_length=200, help_text="Enter a the book's natural language (e.g. English, French, Japanese etc.)")
+    
+    def __str__(self):
+        return self.name
+        
+        
+# Representing a book (but not a specific copy of a book)
+class Book(models.Model):
+    title = models.CharField(max_length=200)
+    author = models.ForeignKey('Author', on_delete=models.SET_NULL, null=True)
+    # Foreign Key is used because a book can only have one author, but authors can have several books
+    # on_delete=models.SET_NULL sets the value of the author to Null if the associated author record is deleted.
+    # null=True allows the database to store a Null value if no author is selected
+    summary = models.TextField(max_length=1000, help_text='Enter a brief description of the book')
+    isbn = models.CharField('ISBN',max_length=13, help_text='13 Character <a href="https://www.isbn-international.org/content/what-isbn">ISBN number</a>')
+    genre = models.ManyToManyField('Genre', help_text='Select a genre for this book') # Manytomanyfield is used because a book can have multiple genres and a genre can have many books
+    language = models.ForeignKey('Language', on_delete=models.SET_NULL, null=True)
+    
+    # Creates a string for the Genre in order to display genre in Admin.
+    def display_genre(self):
+        return ', '.join([ genre.name for genre in self.genre.all()[:3] ])
+    display_genre.short_description = 'Genre'
+    
+    def __str__(self):
+        return self.title
+        
+    def get_absolute_url(self):
+        return reverse('book-detail', args=[str(self.id)]) # Returns the url to access a detail record for this book.
+    
+    
+# Model representing a specific copy of a book (i.e. that can be borrowed from the library).
+class BookInstance(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, help_text="Unique ID for this particular book across whole library") # UUIDField sets a globally unique value for each instance (one for every book you can find in the library)
+    book = models.ForeignKey('Book', on_delete=models.SET_NULL, null=True) 
+    imprint = models.CharField(max_length=200)
+    due_back = models.DateField(null=True, blank=True)
+    borrower = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    
+    LOAN_STATUS = (
+        ('m', 'Maintenance'),
+        ('o', 'On loan'),
+        ('a', 'Available'),
+        ('r', 'Reserved'),
+    )
+    
+    # Choice list for the status of the book
+    status = models.CharField(max_length=1, choices=LOAN_STATUS, blank=True, default='m', help_text='Book availability')
+
+    @property
+    def is_overdue(self):
+        if self.due_back and date.today() > self.due_back:
+            return True
+        return False
+
+    # Sorts each individual book by the time it's due back
+    class Meta:
+        ordering = ["due_back"]
+        permissions = (("can_mark_returned", "Set book as returned"),)  
+        
+    def __str__(self):
+        return '{0} ({1})'.format(self.id,self.book.title)
+    
+    
+# Model representing an author
+class Author(models.Model):
+    first_name = models.CharField(max_length=100)
+    last_name = models.CharField(max_length=100)
+    date_of_birth = models.DateField(null=True, blank=True)
+    date_of_death = models.DateField('Died', null=True, blank=True)
+    
+    # Sorts authors by last name, then first
+    class Meta:
+        ordering = ["last_name","first_name"]
+    
+    def __str__(self):
+        return '{0}, {1}'.format(self.last_name,self.first_name)
+
+    def get_absolute_url(self):
+        return reverse('author-detail', args=[str(self.id)]) # Returns the url to access a detail record for this author.
+    
+    
+    
